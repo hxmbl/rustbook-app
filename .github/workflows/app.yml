@@ -1,0 +1,254 @@
+# Builds the app for the three platforms in scope — Linux, macOS and Android —
+# and uploads the packages as artifacts. The book's own CI (main.yml) is left
+# untouched; this workflow only concerns the native wrapper.
+#
+# The book is rendered once by `native/scripts/stage.sh` (run automatically by
+# Tauri's beforeBuildCommand) into the webview's frontendDist, from where it is
+# embedded into the app binary (desktop) or the APK (Android). Nothing runs at
+# launch.
+name: App
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  MDBOOK_VERSION: "0.5.1"
+  RUST_VERSION: "1.99"
+  NDK_VERSION: "27.2.12479018"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Cancel superseded PR runs, but let every push to main finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux:
+    name: Linux (deb + AppImage)
+    # ubuntu-22.04 for an older glibc, so the AppImage and the deb run on more
+    # distros than a build on ubuntu-latest would allow.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/src-tauri
+            packages/mdbook-trpl
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev
+
+      - name: Install mdbook
+        run: |
+          mkdir -p bin
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz --directory=bin
+          echo "$(pwd)/bin" >> "${GITHUB_PATH}"
+
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli
+
+      - name: Build deb and AppImage
+        working-directory: native/src-tauri
+        run: cargo tauri build --bundles deb,appimage
+
+      - name: Assert bundles exist
+        run: |
+          test -n "$(find native/src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+          test -n "$(find native/src-tauri/target/release/bundle/appimage -name '*.AppImage' -print -quit)"
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustbook-linux-deb
+          path: native/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustbook-linux-appimage
+          path: native/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: macOS (app + dmg)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/src-tauri
+            packages/mdbook-trpl
+
+      - name: Install mdbook
+        run: |
+          mkdir -p bin
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-aarch64-apple-darwin.tar.gz" | tar -xz --directory=bin
+          echo "$(pwd)/bin" >> "${GITHUB_PATH}"
+
+      # The .dmg bundler lays out its window with AppleScript, which is refused
+      # on a headless runner unless `create-dmg` is present and CI detection is
+      # turned off — the same combination winnow uses.
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli
+
+      - name: Build universal app and dmg
+        working-directory: native/src-tauri
+        env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+        run: cargo tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - name: Assert bundles exist
+        run: |
+          test -n "$(find native/src-tauri/target/universal-apple-darwin/release/bundle/macos -name '*.app' -print -quit)"
+          test -n "$(find native/src-tauri/target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' -print -quit)"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustbook-macos-app
+          path: native/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustbook-macos-dmg
+          path: native/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/src-tauri
+            packages/mdbook-trpl
+          key: android
+
+      - name: Install mdbook
+        run: |
+          mkdir -p bin
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz --directory=bin
+          echo "$(pwd)/bin" >> "${GITHUB_PATH}"
+
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli
+
+      # A fast cross-compile check that the Rust gates cleanly for Android — the
+      # single-instance plugin is desktop-only and the entry point is
+      # mobile-gated — before the slower Gradle build reaches the same code.
+      # `generate_context!` only needs `ui/` to exist, so an empty directory
+      # suffices here; the real book is rendered by stage.sh during the build.
+      - name: Compile check (aarch64-linux-android)
+        working-directory: native
+        run: |
+          mkdir -p ui
+          cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android
+
+      # `gen/android` is gitignored, so the project is generated here from
+      # tauri.conf.json + tauri.android.conf.json once the SDK and NDK exist.
+      - name: Initialize Android project
+        working-directory: native
+        run: cargo tauri android init --ci --skip-targets-install
+
+      # Debug-signed, arm64 only: enough to prove the build and hand back an
+      # installable APK. A signed universal release is a follow-up.
+      - name: Build APK
+        working-directory: native
+        run: cargo tauri android build --debug --apk --target aarch64
+
+      - name: Assert APK exists
+        run: |
+          test -n "$(find native/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustbook-android-apk
+          path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7

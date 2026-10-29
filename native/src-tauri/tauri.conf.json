@@ -42,7 +42,7 @@
     "targets": ["deb", "appimage"],
     "category": "Education",
     "shortDescription": "The Rust Programming Language, offline",
-    "longDescription": "The Rust Programming Language by Steve Klabnik, Carol Nichols and Chris Krycho, with contributions from the Rust community. The book is served locally from the bundled mdbook, so it works without a network connection.",
+    "longDescription": "The Rust Programming Language by Steve Klabnik, Carol Nichols and Chris Krycho, with contributions from the Rust community. The book is rendered when the app is built and read straight from the embedded copy, so it works without a network connection.",
     "copyright": "© The Rust Programming Language contributors",
     "icon": [
       "icons/32x32.png",
@@ -51,9 +51,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "resources/": "resources/"
-    },
     "linux": {
       "deb": {
         "section": "education"

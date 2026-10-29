@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
 #
-# Stage everything the desktop app needs to run mdbook at launch:
+# Render the book for the app:
 #
-#   src-tauri/resources/book-source/   the book source, with book.toml pointing
-#                                      at the preprocessors that ship beside it
-#   src-tauri/resources/bin/           mdbook and the two preprocessors
+#   native/ui/   the HTML that `mdbook build` writes, which is the webview's
+#                frontendDist and is embedded into the app (or the APK) as its
+#                assets. Served at `tauri://localhost` on desktop and
+#                `http://tauri.localhost` on Android.
 #
-# Nothing here renders the book. `mdbook build` is never run at build time; the
-# app runs `mdbook serve` when it starts.
-#
-# The binaries are bundled as resources rather than `externalBin` sidecars on
-# purpose: Tauri installs sidecars into /usr/bin next to the app binary, and a
-# package called `mdbook` in /usr/bin would collide with a real mdbook install.
-# As resources they land in /usr/lib/<product>/ and are copied to the app cache
-# at launch, where they are made executable.
+# This is the only place mdbook runs. It renders the book from the repository
+# root with the repository's own book.toml, exactly as CI does, so the
+# preprocessors (note, listing and link-rewriter) are built by its `cargo run`
+# commands and nothing has to be rewritten. Neither mdbook nor the preprocessors
+# end up in the bundle: the app is a static reader.
 #
 # Tauri runs this through beforeDevCommand / beforeBuildCommand. Run it by hand
-# before `cargo build` in src-tauri if you prefer.
+# before `cargo build` in src-tauri if you prefer, or after editing `src/` to
+# see the change in a running `cargo tauri dev` (reload the window).
 
 set -euo pipefail
 
@@ -24,12 +23,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 native="$(cd "$here/.." && pwd)"
 root="$(cd "$native/.." && pwd)"
 
-resources="$native/src-tauri/resources"
-book_out="$resources/book-source"
-bin_out="$resources/bin"
+book_out="$native/ui"
 
-# Find mdbook. It is not part of the app's Cargo dependencies; it is a sidecar
-# built or installed once and copied into the bundle.
+# Find mdbook. It is a build tool here, not part of the app.
 mdbook_bin="${MDBOOK_BIN:-}"
 if [ -z "$mdbook_bin" ]; then
   for candidate in "$(command -v mdbook 2>/dev/null || true)" "$HOME/.cargo/bin/mdbook"; do
@@ -55,63 +51,29 @@ case "$mdbook_version" in
     ;;
 esac
 
-echo "Staging book source from $root"
+echo "Rendering the book from $root"
 rm -rf "$book_out"
-mkdir -p "$book_out"
-cp -R "$root/src" "$book_out/src"
-cp -R "$root/listings" "$book_out/listings"
-cp -R "$root/theme" "$book_out/theme"
-cp "$root/ferris.css" "$root/ferris.js" "$book_out/"
+mkdir -p "$(dirname "$book_out")"
+# mdbook runs the preprocessor commands from the book root, so `cargo run
+# --manifest-path packages/mdbook-trpl/...` in book.toml resolves there. The
+# destination is absolute, so it is written straight to native/ui regardless of
+# the book root.
+"$mdbook_bin" build "$root" --dest-dir "$book_out"
 
-# The repository's book.toml runs the preprocessors with `cargo run`. The
-# packaged app has no cargo and no packages/ directory, so point the commands at
-# the binaries the app copies into <book>/bin at launch. mdbook runs
-# preprocessors with the book root as cwd, so the relative paths work.
-sed \
-  -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-note"$|command = "bin/mdbook-trpl-note"|' \
-  -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-listing"$|command = "bin/mdbook-trpl-listing"|' \
-  -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-link-rewriter"$|command = "bin/mdbook-trpl-link-rewriter"|' \
-  -e '/^extra-watch-dirs = \["packages\/mdbook-trpl"\]$/d' \
-  "$root/book.toml" >"$book_out/book.toml"
-
-if ! grep -q '^command = "bin/mdbook-trpl-note"$' "$book_out/book.toml" ||
-  ! grep -q '^command = "bin/mdbook-trpl-listing"$' "$book_out/book.toml" ||
-  ! grep -q '^command = "bin/mdbook-trpl-link-rewriter"$' "$book_out/book.toml"; then
-  echo "error: could not rewrite the preprocessor commands in book.toml" >&2
-  echo "The preprocessor lines changed; update native/scripts/stage.sh." >&2
+# The app opens on index.html; the others are what the book links to and what a
+# static host (or the webview) would look for. Fail loudly if any is missing so
+# a broken render never ships as a blank app.
+for required in index.html print.html 404.html; do
+  if [ ! -f "$book_out/$required" ]; then
+    echo "error: mdbook did not write $book_out/$required" >&2
+    exit 1
+  fi
+done
+if ! ls "$book_out"/searchindex*.js >/dev/null 2>&1; then
+  echo "error: mdbook did not write a search index into $book_out" >&2
   exit 1
 fi
 
-echo "Building the book preprocessors"
-# Always release: the binaries are copied into every bundle, and a debug build
-# of the preprocessors would need its own full compile and be far larger.
-cargo build --release --manifest-path "$root/packages/mdbook-trpl/Cargo.toml" \
-  --bin mdbook-trpl-note --bin mdbook-trpl-listing --bin mdbook-trpl-link-rewriter
-pre_dir="$root/packages/mdbook-trpl/target/release"
-
-echo "Staging binaries"
-rm -rf "$bin_out"
-mkdir -p "$bin_out"
-
-copy_bin() {
-  local source="$1"
-  local name="$2"
-  local dest="$bin_out/$name"
-  if [ ! -f "$source" ]; then
-    echo "error: expected $source to exist" >&2
-    exit 1
-  fi
-  cp "$source" "$dest"
-  chmod +x "$dest"
-}
-
-copy_bin "$mdbook_bin" mdbook
-copy_bin "$pre_dir/mdbook-trpl-note" mdbook-trpl-note
-copy_bin "$pre_dir/mdbook-trpl-listing" mdbook-trpl-listing
-copy_bin "$pre_dir/mdbook-trpl-link-rewriter" mdbook-trpl-link-rewriter
-
 echo
-echo "Staged:"
-echo "  $book_out"
-echo "  $bin_out"
+echo "Rendered: $book_out ($(du -sh "$book_out" | cut -f1))"
 echo "  mdbook: $mdbook_version ($mdbook_bin)"

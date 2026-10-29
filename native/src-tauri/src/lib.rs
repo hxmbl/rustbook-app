@@ -1,39 +1,45 @@
-//! The desktop shell for *The Rust Programming Language*.
+//! The native shell for *The Rust Programming Language*, on Linux, macOS and
+//! Android.
 //!
-//! There is no frontend to build. The app ships the book's Markdown, its theme
-//! and an `mdbook` binary, and runs `mdbook serve` on a loopback port at launch.
-//! The window shows a small loading page until the server answers, then
-//! navigates to it.
+//! There is no frontend to build and nothing runs at launch. `scripts/stage.sh`
+//! renders the book with `mdbook build` when the app is bundled, and the HTML is
+//! embedded as the webview's frontend. The window opens straight onto it: on
+//! desktop through Tauri's `tauri://` scheme, on Android through
+//! `http://tauri.localhost`, both served from the same embedded assets.
+//!
+//! The only thing this crate does at runtime is keep external links out of the
+//! reader: a link to crates.io opens in the system browser rather than by
+//! replacing the book, which has no back button.
 
-mod paths;
-mod server;
-
-use std::sync::Mutex;
-
-use tauri::{Manager, RunEvent, Url};
+use tauri::{Manager, Url};
 use tauri_plugin_opener::OpenerExt;
 
-/// Holds the running mdbook process so it can be killed when the app exits.
-struct ServerState(Mutex<Option<server::BookServer>>);
-
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        // A second launch should surface the window that is already open: two
-        // instances would fight over the same cache directory, and the second
-        // one would delete the first one's book while it is being served. Tauri
-        // requires this plugin to be registered before every other plugin.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
+    // `single_instance` has to be registered before every other plugin so a
+    // second launch is detected and forwarded early. It is desktop-only: Android
+    // hands single-instance behaviour to the OS, and the plugin has no mobile
+    // backend, so registering it unconditionally would not compile there.
+    let builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // A second launch should surface the window that is already open rather
+        // than open a second copy of the book.
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .on_window_event(|window, event| {
             // A single-window reader should quit when its window closes, the way
-            // it does on Linux and Windows, rather than leaving an app running
-            // with no window and no way to reopen one.
+            // it does on Linux and Android, rather than leaving an app running
+            // with no window and no way to reopen one. macOS keeps running in the
+            // dock until the user quits, the platform convention.
             #[cfg(target_os = "macos")]
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 window.app_handle().exit(0);
@@ -42,8 +48,6 @@ pub fn run() {
             let _ = (window, event);
         })
         .setup(|app| {
-            app.manage(ServerState(Mutex::new(None)));
-
             // The window is created here rather than by the config so the
             // navigation handler can be attached to it. Without the handler a
             // link to crates.io would replace the book, and the window has no
@@ -57,7 +61,7 @@ pub fn run() {
                 .ok_or("tauri.conf.json does not declare a window")?;
 
             let opener = app.handle().clone();
-            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .on_navigation(move |url| {
                     if is_app_url(url) {
                         return true;
@@ -69,72 +73,20 @@ pub fn run() {
                 })
                 .build()?;
 
-            // Building the book takes a second or two, so do it off the main
-            // thread and leave the loading page visible meanwhile.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                match server::start(&handle) {
-                    Ok(book) => {
-                        let url = match book.url().parse::<Url>() {
-                            Ok(url) => url,
-                            Err(err) => {
-                                server::show_error(
-                                    &window,
-                                    &format!("could not parse the book's address: {err}"),
-                                    book.log_path(),
-                                );
-                                return;
-                            }
-                        };
-                        if let Err(err) = window.navigate(url) {
-                            server::show_error(
-                                &window,
-                                &format!("could not open the book: {err}"),
-                                book.log_path(),
-                            );
-                            return;
-                        }
-                        *handle.state::<ServerState>().0.lock().unwrap() = Some(book);
-                    }
-                    Err(err) => {
-                        eprintln!("{err}");
-                        server::show_error(&window, &err, &server::log_path(&handle));
-                    }
-                }
-
-                // On Linux mdbook is told to die with the thread that spawned
-                // it, not with the process (PR_SET_PDEATHSIG is per-thread), so
-                // this thread has to stay alive for as long as the book runs.
-                // The process exiting is what ends it.
-                loop {
-                    std::thread::park();
-                }
-            });
-
             Ok(())
         })
-        .build(tauri::generate_context!())
-        .expect("failed to build The Rust Programming Language")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
-                // Also stops a server that is still starting up, which would
-                // otherwise outlive the app.
-                server::shutdown();
-                if let Some(mut book) = app.state::<ServerState>().0.lock().unwrap().take() {
-                    book.stop();
-                }
-            }
-        });
+        .run(tauri::generate_context!())
+        .expect("failed to run The Rust Programming Language");
 }
 
-/// Pages the app itself owns: the loading page and the local mdbook server.
+/// Pages the app itself owns: the whole embedded book, which lives on the
+/// webview's own origin — `tauri://localhost` on desktop, `http://tauri.localhost`
+/// on Android — plus Tauri's own `tauri` scheme. Anything else is an external
+/// link and belongs in the system browser.
 fn is_app_url(url: &Url) -> bool {
     match url.scheme() {
         "tauri" => true,
-        "http" | "https" => matches!(
-            url.host_str(),
-            Some("127.0.0.1" | "localhost" | "tauri.localhost")
-        ),
+        "http" | "https" => matches!(url.host_str(), Some("tauri.localhost")),
         _ => false,
     }
 }

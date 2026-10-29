@@ -1,5 +1,4 @@
 # Everything here is produced by scripts/stage.sh or by cargo/tauri.
 /src-tauri/target/
 /src-tauri/gen/
-/src-tauri/resources/bin/
-/src-tauri/resources/book-source/
+/ui/
