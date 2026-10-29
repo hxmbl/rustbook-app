@@ -70,11 +70,13 @@ cp "$root/ferris.css" "$root/ferris.js" "$book_out/"
 sed \
   -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-note"$|command = "bin/mdbook-trpl-note"|' \
   -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-listing"$|command = "bin/mdbook-trpl-listing"|' \
+  -e 's|^command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-link-rewriter"$|command = "bin/mdbook-trpl-link-rewriter"|' \
   -e '/^extra-watch-dirs = \["packages\/mdbook-trpl"\]$/d' \
   "$root/book.toml" >"$book_out/book.toml"
 
 if ! grep -q '^command = "bin/mdbook-trpl-note"$' "$book_out/book.toml" ||
-  ! grep -q '^command = "bin/mdbook-trpl-listing"$' "$book_out/book.toml"; then
+  ! grep -q '^command = "bin/mdbook-trpl-listing"$' "$book_out/book.toml" ||
+  ! grep -q '^command = "bin/mdbook-trpl-link-rewriter"$' "$book_out/book.toml"; then
   echo "error: could not rewrite the preprocessor commands in book.toml" >&2
   echo "The preprocessor lines changed; update native/scripts/stage.sh." >&2
   exit 1
@@ -84,7 +86,7 @@ echo "Building the book preprocessors"
 # Always release: the binaries are copied into every bundle, and a debug build
 # of the preprocessors would need its own full compile and be far larger.
 cargo build --release --manifest-path "$root/packages/mdbook-trpl/Cargo.toml" \
-  --bin mdbook-trpl-note --bin mdbook-trpl-listing
+  --bin mdbook-trpl-note --bin mdbook-trpl-listing --bin mdbook-trpl-link-rewriter
 pre_dir="$root/packages/mdbook-trpl/target/release"
 
 echo "Staging binaries"
@@ -106,6 +108,7 @@ copy_bin() {
 copy_bin "$mdbook_bin" mdbook
 copy_bin "$pre_dir/mdbook-trpl-note" mdbook-trpl-note
 copy_bin "$pre_dir/mdbook-trpl-listing" mdbook-trpl-listing
+copy_bin "$pre_dir/mdbook-trpl-link-rewriter" mdbook-trpl-link-rewriter
 
 echo
 echo "Staged:"

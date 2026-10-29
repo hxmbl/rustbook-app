@@ -19,6 +19,10 @@ path = "src/bin/heading.rs"
 name = "mdbook-trpl-figure"
 path = "src/bin/figure.rs"
 
+[[bin]]
+name = "mdbook-trpl-link-rewriter"
+path = "src/bin/link_rewriter.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

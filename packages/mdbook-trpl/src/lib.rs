@@ -1,12 +1,14 @@
 mod config;
 mod figure;
 mod heading;
+mod link_rewriter;
 mod listing;
 mod note;
 
 pub use config::Mode;
 pub use figure::TrplFigure as Figure;
 pub use heading::TrplHeading as Heading;
+pub use link_rewriter::TrplLinkRewriter as LinkRewriter;
 pub use listing::TrplListing as Listing;
 pub use note::TrplNote as Note;
 use pulldown_cmark::{Options, Parser};

@@ -169,7 +169,7 @@ fn stage(source: &Path, bins: &Path, work: &Path) -> Result<(), String> {
     let bin = work.join("bin");
     fs::create_dir_all(&bin)
         .map_err(|err| format!("could not create {}: {err}", bin.display()))?;
-    for name in ["mdbook", "mdbook-trpl-note", "mdbook-trpl-listing"] {
+    for name in ["mdbook", "mdbook-trpl-note", "mdbook-trpl-listing", "mdbook-trpl-link-rewriter"] {
         let from = bins.join(exe(name));
         let to = bin.join(exe(name));
         fs::copy(&from, &to).map_err(|err| {

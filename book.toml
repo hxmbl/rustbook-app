@@ -45,6 +45,9 @@ command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdboo
 command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-listing"
 output-mode = "default"
 
+[preprocessor.trpl-link-rewriter]
+command = "cargo run --manifest-path packages/mdbook-trpl/Cargo.toml --bin mdbook-trpl-link-rewriter"
+
 [rust]
 edition = "2024"
 
