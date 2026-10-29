@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Rust Programming Language</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f6;
+        --fg: #262625;
+        --muted: #6b6b68;
+        --accent: #ce422b;
+        --line: #deded8;
+        --code: #ecece6;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1b1d22;
+          --fg: #e8e6e3;
+          --muted: #a5a29c;
+          --accent: #e05a3f;
+          --line: #34373f;
+          --code: #262a31;
+        }
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          sans-serif;
+      }
+
+      main {
+        max-width: 34rem;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .mark {
+        width: 84px;
+        height: 84px;
+        margin: 0 auto 1.75rem;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.45rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .progress {
+        position: relative;
+        overflow: hidden;
+        height: 3px;
+        margin: 2rem auto 0;
+        width: 12rem;
+        border-radius: 999px;
+        background: var(--line);
+      }
+
+      .progress::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        border-radius: inherit;
+        background: var(--accent);
+        animation: slide 1.4s ease-in-out infinite;
+      }
+
+      @keyframes slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(350%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .progress::after {
+          animation: none;
+          width: 100%;
+          opacity: 0.5;
+        }
+      }
+
+      pre {
+        margin: 1.5rem 0 0;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      /* The error case: no point pretending to make progress. */
+      .failed .progress {
+        display: none;
+      }
+
+      .failed .mark {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main id="panel">
+      <svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M512 320c-72-40-172-52-252-44v480c80-8 180 4 252 44 72-40 172-52 252-44V276c-80-8-180 4-252 44Zm-40 34v390c-56-24-124-32-184-28V330c60-4 128 4 184 24Zm80 0c56-20 124-28 184-24v386c-60-4-128 4-184 28V354Z"
+        />
+      </svg>
+      <h1 id="title">Starting the book&hellip;</h1>
+      <p id="status">
+        Building the chapters locally. This takes a moment on the first launch.
+      </p>
+      <div class="progress" aria-hidden="true"></div>
+      <pre id="detail" hidden></pre>
+    </main>
+    <script>
+      // Called from Rust if mdbook cannot be started. The book is served from a
+      // local process, so there is no page of its own to show the failure on.
+      window.showBookError = function (message, log) {
+        document.getElementById("panel").classList.add("failed");
+        document.getElementById("title").textContent = "The book could not start";
+        document.getElementById("status").textContent = message;
+        if (log) {
+          var detail = document.getElementById("detail");
+          detail.hidden = false;
+          detail.textContent = "mdbook log: " + log;
+        }
+      };
+    </script>
+  </body>
+</html>

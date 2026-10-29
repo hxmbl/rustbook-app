@@ -1,0 +1,40 @@
+[package]
+name = "rustbook"
+version = "0.1.0"
+description = "The Rust Programming Language, as a desktop app"
+authors = ["The Rust Programming Language contributors"]
+edition = "2021"
+rust-version = "1.77"
+license = "MIT OR Apache-2.0"
+
+# Standalone: the book repository's root Cargo.toml is a workspace for the
+# preprocessors, and this crate is not part of it.
+[workspace]
+
+[lib]
+name = "rustbook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustbook"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde_json = "1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
+codegen-units = 1
