@@ -27,6 +27,12 @@ See the [releases] to download just the code of all the code listings that appea
 serves it locally at launch, so it works offline. It builds Linux `.deb` and
 AppImage bundles; see [native/README.md](native/README.md) for details.
 
+## Mobile app
+
+Not available yet. The desktop app runs `mdbook serve` as a child process, which
+mobile platforms do not allow, so a mobile version would need the book rendered
+at build time or served from inside the app instead.
+
 ## Requirements
 
 Building the book requires [mdBook], ideally the same version that
