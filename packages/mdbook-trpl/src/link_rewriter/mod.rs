@@ -123,6 +123,9 @@ fn rewrite_url(url: &str, chapter_map: &HashMap<String, String>) -> String {
             // Not a book chapter, keep as external
             url.to_string()
         }
+    } else if url == "https://doc.rust-lang.org/stable/book" {
+        // Handle base book URL without trailing slash
+        return "index.html".to_string();
     } else {
         // Not a book URL, keep as-is
         url.to_string()
@@ -143,7 +146,7 @@ fn rewrite_reference_links(text: &str, chapter_map: &HashMap<String, String>) ->
 
                 // Rewrite the URL if it's a book link
                 let rewritten_url = rewrite_url(url_part, chapter_map);
-                result.push_str(&format!("{} {}", ref_name, rewritten_url));
+                result.push_str(&format!("{}: {}", ref_name, rewritten_url));
             } else {
                 result.push_str(line);
             }
