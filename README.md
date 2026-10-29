@@ -21,6 +21,12 @@ See the [releases] to download just the code of all the code listings that appea
 
 [releases]: https://github.com/rust-lang/book/releases
 
+## Desktop app
+
+`native/` contains a Tauri v2 desktop app that bundles the book and mdbook and
+serves it locally at launch, so it works offline. It builds Linux `.deb` and
+AppImage bundles; see [native/README.md](native/README.md) for details.
+
 ## Requirements
 
 Building the book requires [mdBook], ideally the same version that
