@@ -252,3 +252,49 @@ jobs:
           path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 7
+
+  # The dumb version of a release pipeline: every build of main replaces the
+  # files on a single rolling `continuous` release. No tags, no versioning, no
+  # release notes — the newest build is always in the same place.
+  release:
+    name: Update rolling release
+    needs: [linux, macos, android]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Replace the assets on the continuous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The macOS `.app` is a directory; a release can only hold files.
+          find dist -maxdepth 1 -type d -name '*.app' | while read -r app; do
+            zip -rq "$app.zip" "$app"
+            rm -rf "$app"
+          done
+
+          if ! gh release view continuous >/dev/null 2>&1; then
+            gh release create continuous \
+              --prerelease \
+              --title "Continuous build" \
+              --notes "Automated builds of \`main\`. Every push replaces the files below."
+          fi
+
+          # Delete the old assets first: their names carry the version, so a
+          # version bump would otherwise leave the previous build lying around.
+          gh release view continuous --json assets --jq '.assets[].name' \
+            | while read -r asset; do
+                gh release delete-asset continuous "$asset" --yes
+              done
+
+          gh release upload continuous dist/*
