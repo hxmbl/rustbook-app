@@ -274,11 +274,16 @@ jobs:
       - name: Replace the assets on the continuous release
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job, so gh cannot fall back to git for the repo.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          # The macOS `.app` is a directory; a release can only hold files.
-          find dist -maxdepth 1 -type d -name '*.app' | while read -r app; do
+          # The macOS `.app` is a directory; a release can only hold files. Zip
+          # it from inside dist/ so the archive holds `Rust Book.app` at its
+          # root rather than a `dist/` parent folder.
+          cd dist
+          find . -maxdepth 1 -type d -name '*.app' | while read -r app; do
             zip -rq "$app.zip" "$app"
             rm -rf "$app"
           done
@@ -297,4 +302,4 @@ jobs:
                 gh release delete-asset continuous "$asset" --yes
               done
 
-          gh release upload continuous dist/*
+          gh release upload continuous --clobber *
