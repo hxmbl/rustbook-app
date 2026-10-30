@@ -302,4 +302,7 @@ jobs:
                 gh release delete-asset continuous "$asset" --yes
               done
 
-          gh release upload continuous --clobber *
+          # Only regular files: artifacts can arrive nested (the APK sits under
+          # its Gradle flavor directory), and gh reads every argument as a file —
+          # handing it a directory fails the job. Asset names are the basenames.
+          find . -type f -print0 | xargs -0 gh release upload continuous --clobber
